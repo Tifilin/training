@@ -1,0 +1,22 @@
+name: Test IA1 Bot
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt
+      - run: python bot.py
+        env:
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TZ: Europe/Moscow
+          DB_PATH: data/ia1_reports.db
+          CSV_BACKUP: data/ia1_reports_backup.csv
