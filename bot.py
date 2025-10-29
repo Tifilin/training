@@ -5,7 +5,6 @@ import pytz
 from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, filters, ConversationHandler
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 # ======== Конфигурация ========
 load_dotenv()
@@ -51,7 +50,6 @@ def save_report(user_id, username, ts_iso, local_date_str, day_index, text):
     )
     conn.commit()
     conn.close()
-    # CSV backup
     write_header = not os.path.exists(CSV_BACKUP)
     with open(CSV_BACKUP, "a", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
@@ -147,25 +145,23 @@ async def cmd_setreminder(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("Использование: /setreminder HH:MM")
             return
         time_str = args[0]
-        # проверка формата
         hour, minute = map(int, time_str.split(":"))
         if not (0 <= hour < 24 and 0 <= minute < 60):
             raise ValueError
         set_reminder(update.effective_user.id, time_str)
         await update.message.reply_text(f"Напоминание установлено на {time_str} каждый день.")
-    except Exception as e:
+    except Exception:
         await update.message.reply_text("Неверный формат времени. Пример: /setreminder 21:00")
 
-# ======== Напоминания ========
-async def send_reminder(context: ContextTypes.DEFAULT_TYPE):
-    bot = context.bot
+# ======== Напоминания через JobQueue ========
+async def send_reminder_job(context: ContextTypes.DEFAULT_TYPE):
     now = get_local_now()
     reminders = get_reminders()
     for user_id, time_str in reminders:
         h, m = map(int, time_str.split(":"))
         if now.hour == h and now.minute == m:
             try:
-                await bot.send_message(chat_id=user_id, text="Напоминание: пришлите отчёт и выполните миссию сегодня!")
+                await context.bot.send_message(chat_id=user_id, text="Напоминание: пришлите отчёт и выполните миссию сегодня!")
             except Exception as e:
                 logger.error(f"Ошибка отправки напоминания {user_id}: {e}")
 
@@ -187,9 +183,8 @@ def main():
     application.add_handler(CommandHandler("progress", cmd_progress))
     application.add_handler(CommandHandler("setreminder", cmd_setreminder))
 
-    scheduler = AsyncIOScheduler(timezone=TIMEZONE)
-    scheduler.add_job(send_reminder, "interval", minutes=1, args=[application])
-    scheduler.start()
+    # Добавляем JobQueue для напоминаний
+    application.job_queue.run_repeating(send_reminder_job, interval=60, first=0)
 
     application.run_polling()
 
